@@ -69,6 +69,7 @@ mod credentials_tests;
     reason = "Staged for the passive handler in https://github.com/dsx-ai-factory/infra-controller/issues/8633"
 )]
 mod firmware_details;
+mod operation;
 pub(crate) mod power_details;
 
 const MACHINE_POWER_OVERRIDE_SOURCE: &str = "component_power_control";
@@ -3284,6 +3285,16 @@ pub(crate) async fn component_power_control(
     api: &Api,
     request: Request<rpc::ComponentPowerControlRequest>,
 ) -> Result<Response<rpc::ComponentPowerControlResponse>, Status> {
+    operation::run(request, |request| {
+        component_power_control_inner(api, request)
+    })
+    .await
+}
+
+async fn component_power_control_inner(
+    api: &Api,
+    request: Request<rpc::ComponentPowerControlRequest>,
+) -> Result<Response<rpc::ComponentPowerControlResponse>, Status> {
     log_request_data_redacted("ComponentPowerControlRequest { redacted }");
     let cm = require_component_manager(api)?;
     let req = request.into_inner();
@@ -3884,6 +3895,13 @@ pub(crate) async fn component_reset(
     api: &Api,
     request: Request<rpc::ComponentResetRequest>,
 ) -> Result<Response<rpc::ComponentResetResponse>, Status> {
+    operation::run(request, |request| component_reset_inner(api, request)).await
+}
+
+async fn component_reset_inner(
+    api: &Api,
+    request: Request<rpc::ComponentResetRequest>,
+) -> Result<Response<rpc::ComponentResetResponse>, Status> {
     use rpc::component_reset_request::Target;
 
     log_request_data(&request);
@@ -4138,6 +4156,16 @@ pub(crate) async fn component_configure_switch_certificate(
     api: &Api,
     request: Request<rpc::ComponentConfigureSwitchCertificateRequest>,
 ) -> Result<Response<rpc::ComponentConfigureSwitchCertificateResponse>, Status> {
+    operation::run(request, |request| {
+        component_configure_switch_certificate_inner(api, request)
+    })
+    .await
+}
+
+async fn component_configure_switch_certificate_inner(
+    api: &Api,
+    request: Request<rpc::ComponentConfigureSwitchCertificateRequest>,
+) -> Result<Response<rpc::ComponentConfigureSwitchCertificateResponse>, Status> {
     log_request_data(&request);
     let cm = require_component_manager(api)?;
     let req = request.into_inner();
@@ -4353,6 +4381,16 @@ async fn inventory_by_bmc_macs(
 }
 
 pub(crate) async fn get_component_inventory(
+    api: &Api,
+    request: Request<rpc::GetComponentInventoryRequest>,
+) -> Result<Response<rpc::GetComponentInventoryResponse>, Status> {
+    operation::run(request, |request| {
+        get_component_inventory_inner(api, request)
+    })
+    .await
+}
+
+async fn get_component_inventory_inner(
     api: &Api,
     request: Request<rpc::GetComponentInventoryRequest>,
 ) -> Result<Response<rpc::GetComponentInventoryResponse>, Status> {
@@ -5140,6 +5178,16 @@ async fn update_power_shelf_firmware_by_mac(
 }
 
 pub(crate) async fn update_component_firmware(
+    api: &Api,
+    request: Request<rpc::UpdateComponentFirmwareRequest>,
+) -> Result<Response<rpc::UpdateComponentFirmwareResponse>, Status> {
+    operation::run(request, |request| {
+        update_component_firmware_inner(api, request)
+    })
+    .await
+}
+
+async fn update_component_firmware_inner(
     api: &Api,
     request: Request<rpc::UpdateComponentFirmwareRequest>,
 ) -> Result<Response<rpc::UpdateComponentFirmwareResponse>, Status> {
@@ -6100,6 +6148,16 @@ pub(crate) async fn get_component_firmware_status(
     api: &Api,
     request: Request<rpc::GetComponentFirmwareStatusRequest>,
 ) -> Result<Response<rpc::GetComponentFirmwareStatusResponse>, Status> {
+    operation::run(request, |request| {
+        get_component_firmware_status_inner(api, request)
+    })
+    .await
+}
+
+async fn get_component_firmware_status_inner(
+    api: &Api,
+    request: Request<rpc::GetComponentFirmwareStatusRequest>,
+) -> Result<Response<rpc::GetComponentFirmwareStatusResponse>, Status> {
     log_request_data(&request);
     let req = request.into_inner();
 
@@ -6479,6 +6537,16 @@ async fn pre_ingestion_power_shelf_firmware_versions(
 }
 
 pub(crate) async fn list_component_firmware_versions(
+    api: &Api,
+    request: Request<rpc::ListComponentFirmwareVersionsRequest>,
+) -> Result<Response<rpc::ListComponentFirmwareVersionsResponse>, Status> {
+    operation::run(request, |request| {
+        list_component_firmware_versions_inner(api, request)
+    })
+    .await
+}
+
+async fn list_component_firmware_versions_inner(
     api: &Api,
     request: Request<rpc::ListComponentFirmwareVersionsRequest>,
 ) -> Result<Response<rpc::ListComponentFirmwareVersionsResponse>, Status> {

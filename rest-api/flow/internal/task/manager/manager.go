@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/NVIDIA/infra-controller/rest-api/flow/internal/common/logcorrelation"
 	inventorystore "github.com/NVIDIA/infra-controller/rest-api/flow/internal/inventory/store"
 	"github.com/NVIDIA/infra-controller/rest-api/flow/internal/operation"
 	taskcommon "github.com/NVIDIA/infra-controller/rest-api/flow/internal/task/common"
@@ -216,6 +217,8 @@ func (m *ManagerImpl) SubmitTask(
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+	ctx = logcorrelation.Restore(ctx, req.TraceID)
+	ctx = logcorrelation.Restore(ctx, logcorrelation.Capture(ctx))
 
 	// A caller may retry after task submission succeeded but persisting the
 	// returned task ID failed. Once the task is scheduled, its idempotency key
@@ -569,7 +572,7 @@ func (m *ManagerImpl) createAndExecuteTask(
 		return m.createAndExecuteIdempotentTask(ctx, req, targetRack)
 	}
 
-	task := newTaskForRack(req, targetRack)
+	task := newTaskForRack(ctx, req, targetRack)
 
 	// Check for conflicts inside a transaction to avoid a race between the
 	// check and the creation.
@@ -638,7 +641,7 @@ func (m *ManagerImpl) createAndExecuteIdempotentTask(
 
 			} else {
 				// No existing tasks with this idempotency key, create a new one.
-				task = newTaskForRack(req, targetRack)
+				task = newTaskForRack(ctx, req, targetRack)
 				if err := m.lockRackAndResolveConflict(txCtx, req, targetRack, &task); err != nil {
 					return err
 				}
@@ -704,7 +707,7 @@ func validateIdempotentTaskRack(req *operation.Request, existing *taskdef.Task) 
 	)
 }
 
-func newTaskForRack(req *operation.Request, targetRack *rack.Rack) taskdef.Task {
+func newTaskForRack(ctx context.Context, req *operation.Request, targetRack *rack.Rack) taskdef.Task {
 	compsByType := make(
 		map[devicetypes.ComponentType][]uuid.UUID,
 		len(targetRack.Components),
@@ -718,6 +721,7 @@ func newTaskForRack(req *operation.Request, targetRack *rack.Rack) taskdef.Task 
 		Operation: req.Operation,
 		RackID:    targetRack.Info.ID,
 		Attributes: taskcommon.TaskAttributes{
+			TraceID:          logcorrelation.Capture(ctx),
 			ComponentsByType: compsByType,
 		},
 		Description:    req.Description,
@@ -838,9 +842,10 @@ func (m *ManagerImpl) resolveAndExecuteTaskWithTransaction(
 		return fmt.Errorf("resolver returned nil rule (should never happen)")
 	}
 
+	logger := logcorrelation.LoggerWithTrace(ctx, log.Logger)
 	if rule.ID != uuid.Nil {
 		task.AppliedRuleID = &rule.ID
-		log.Info().
+		logger.Info().
 			Str("rule_name", rule.Name).
 			Str("rule_id", rule.ID.String()).
 			Str("operation_type", string(task.Operation.Type)).
@@ -849,7 +854,7 @@ func (m *ManagerImpl) resolveAndExecuteTaskWithTransaction(
 			Msg("Resolved operation rule for task")
 	} else {
 		task.AppliedRuleID = nil
-		log.Info().
+		logger.Info().
 			Str("rule_name", rule.Name).
 			Str("operation_type", string(task.Operation.Type)).
 			Str("operation", task.Operation.Code).
@@ -1180,6 +1185,7 @@ func (m *ManagerImpl) executeTask(
 	req := taskdef.ExecutionRequest{
 		Info: taskdef.ExecutionInfo{
 			TaskID:         task.ID,
+			TraceID:        task.Attributes.TraceID,
 			Components:     workflowComponentsFrom(targetRack),
 			RuleDefinition: &rule.RuleDefinition,
 			OperationType:  task.Operation.Type,
