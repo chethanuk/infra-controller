@@ -667,6 +667,7 @@ func testGeneratedBodyFormRealSchemaUnscopedTrayFlowUsesSelectedSite(t *testing.
 			false, // filter.type
 			false, // overrideReadinessCheck
 			false, // ruleId
+			false, // targetResolutionMode (omitted; defaults to Strict)
 		},
 		texts: []string{
 			"", // filter.rackName

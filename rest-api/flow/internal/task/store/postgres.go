@@ -448,6 +448,7 @@ func (s *PostgresStore) UpdateTaskStatus(
 		arg.Message,
 		arg.Report,
 		arg.QueueExpiresAt,
+		arg.OnlyIfPendingUnscheduled,
 	)
 	if err != nil {
 		return errors.GRPCErrorInternal(err.Error())

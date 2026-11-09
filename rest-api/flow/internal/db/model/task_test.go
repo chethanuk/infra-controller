@@ -77,6 +77,7 @@ func TestTask_UpdateTaskStatus(t *testing.T) {
 			"Waiting for target linkage",
 			nil,
 			&deadline,
+			false,
 		)
 
 		require.NoError(t, err)
@@ -105,6 +106,7 @@ func TestTask_UpdateTaskStatus(t *testing.T) {
 			"Expired",
 			nil,
 			nil,
+			false,
 		)
 
 		require.NoError(t, err)

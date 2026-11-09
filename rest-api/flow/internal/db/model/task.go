@@ -147,6 +147,7 @@ func (t *Task) UpdateScheduledTask(
 // UpdateTaskStatus updates the status of the task. Non-nil report and
 // queueExpiresAt values replace their corresponding stored columns. Finished
 // statuses clear queueExpiresAt because the deadline applies only while waiting.
+// onlyIfPendingUnscheduled makes other task states a successful no-op.
 func (t *Task) UpdateTaskStatus(
 	ctx context.Context,
 	idb bun.IDB,
@@ -154,6 +155,7 @@ func (t *Task) UpdateTaskStatus(
 	message string,
 	report json.RawMessage,
 	queueExpiresAt *time.Time,
+	onlyIfPendingUnscheduled bool,
 ) error {
 	t.Status = status
 	t.Message = message
@@ -180,13 +182,25 @@ func (t *Task) UpdateTaskStatus(
 		}
 	}
 
-	_, err := idb.NewUpdate().
+	query := idb.NewUpdate().
 		Model(t).
 		Column(columns...).
-		Where("id = ?", t.ID).
-		Exec(ctx)
-
-	return err
+		Where("id = ?", t.ID)
+	if onlyIfPendingUnscheduled {
+		query = query.Where("status = ?", taskcommon.TaskStatusPending).Where("execution_id = ?", "")
+	}
+	result, err := query.Exec(ctx)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows > 1 {
+		return fmt.Errorf("update task status %s affected %d rows", t.ID, rows)
+	}
+	return nil
 }
 
 // UpdateTaskReport updates the structured report without changing status or message.

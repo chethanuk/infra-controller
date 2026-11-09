@@ -194,6 +194,7 @@
   - [QueueOptions](#v1-QueueOptions)
   - [Rack](#v1-Rack)
   - [RackMemberPowerActions](#v1-RackMemberPowerActions)
+  - [RackOperationStatusDetails](#v1-RackOperationStatusDetails)
   - [RackPosition](#v1-RackPosition)
   - [RackPowerCoverage](#v1-RackPowerCoverage)
   - [RackPowerDetails](#v1-RackPowerDetails)
@@ -220,6 +221,8 @@
   - [TaskScheduleScope](#v1-TaskScheduleScope)
   - [TaskStats](#v1-TaskStats)
   - [TrayPowerDetails](#v1-TrayPowerDetails)
+  - [TrayStatusCounts](#v1-TrayStatusCounts)
+  - [TrayStatusCountsByType](#v1-TrayStatusCountsByType)
   - [TriggerTaskScheduleRequest](#v1-TriggerTaskScheduleRequest)
   - [UUID](#v1-UUID)
   - [UpdateEventRuleRequest](#v1-UpdateEventRuleRequest)
@@ -261,6 +264,7 @@
   - [RackOrderByField](#v1-RackOrderByField)
   - [RackPowerState](#v1-RackPowerState)
   - [ScheduleSpecType](#v1-ScheduleSpecType)
+  - [TargetResolutionMode](#v1-TargetResolutionMode)
   - [TaskExecutorType](#v1-TaskExecutorType)
   - [TaskKind](#v1-TaskKind)
   - [TaskStatus](#v1-TaskStatus)
@@ -284,6 +288,7 @@
 | queue_options | [QueueOptions](#v1-QueueOptions) | optional |  |
 | rule_id | [UUID](#v1-UUID) | optional | optional: override rule resolution with a specific rule |
 | override_readiness_check | [bool](#bool) |  | When true, proceed with the AC power cycle even if one or more target components (or, for rack-scoped components, any host on the owning rack) are reported as not ready for the operation by their persisted ComponentOperationStatus. Intended for operator-supervised maintenance where tenant impact has been acknowledged out-of-band; the bypass is recorded in the server log. |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-AddComponentRequest"></a>
 
@@ -382,6 +387,7 @@ AddTaskScheduleScopeResponse returns the newly created scope entries.
 | description | [string](#string) |  | optional task description |
 | rule_id | [UUID](#v1-UUID) | optional | optional: override rule resolution with a specific rule |
 | override_readiness_check | [bool](#bool) |  | When true, allow the bring-up sequence (which may power-cycle hosts and reset rack-scoped components) to proceed even if any host in scope is reported as not ready for the operation by its persisted ComponentOperationStatus. Intended for operator-supervised maintenance where tenant impact has been acknowledged out-of-band; the bypass is recorded in the server log. |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-BuildInfo"></a>
 
@@ -695,6 +701,7 @@ Use AddTaskScheduleScope / RemoveTaskScheduleScope to modify the scope after cre
 | description | [string](#string) |  | optional task description |
 | queue_options | [QueueOptions](#v1-QueueOptions) | optional | optional queue policy overrides |
 | rule_id | [UUID](#v1-UUID) | optional | optional: override rule resolution with a specific rule |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-DeleteComponentRequest"></a>
 
@@ -1353,6 +1360,7 @@ HealthReport is Flow&#39;s latest synchronized snapshot of Core aggregate health
 | filters | [Filter](#v1-Filter) | repeated | Filter conditions for component queries (e.g. by type, name) |
 | description | [string](#string) |  | optional task description |
 | rule_id | [UUID](#v1-UUID) | optional | optional: override rule resolution with a specific rule |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-ListEventRulesRequest"></a>
 
@@ -2065,6 +2073,7 @@ Stored Core policy, including NotApplicable/Unavailable, or a Flow read failure.
 | queue_options | [QueueOptions](#v1-QueueOptions) | optional |  |
 | rule_id | [UUID](#v1-UUID) | optional | optional: override rule resolution with a specific rule |
 | override_readiness_check | [bool](#bool) |  | When true, proceed with the power-off even if one or more target components (or, for rack-scoped components, any host on the owning rack) are reported as not ready for the operation by their persisted ComponentOperationStatus. Intended for operator-supervised maintenance where tenant impact has been acknowledged out-of-band; the bypass is recorded in the server log. |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-PowerOnRackRequest"></a>
 
@@ -2077,6 +2086,7 @@ Stored Core policy, including NotApplicable/Unavailable, or a Flow read failure.
 | queue_options | [QueueOptions](#v1-QueueOptions) | optional |  |
 | rule_id | [UUID](#v1-UUID) | optional | optional: override rule resolution with a specific rule |
 | override_readiness_check | [bool](#bool) |  | When true, proceed with the power-on even if one or more target components (or, for rack-scoped components, any host on the owning rack) are reported as not ready for the operation by their persisted ComponentOperationStatus. Intended for operator-supervised maintenance where tenant impact has been acknowledged out-of-band; the bypass is recorded in the server log. |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-PowerOperations"></a>
 
@@ -2101,6 +2111,7 @@ Core maintenance and Flow tasks are separate records without a correlation ID.
 | queue_options | [QueueOptions](#v1-QueueOptions) | optional |  |
 | rule_id | [UUID](#v1-UUID) | optional | optional: override rule resolution with a specific rule |
 | override_readiness_check | [bool](#bool) |  | When true, proceed with the reset even if one or more target components (or, for rack-scoped components, any host on the owning rack) are reported as not ready for the operation by their persisted ComponentOperationStatus. Intended for operator-supervised maintenance where tenant impact has been acknowledged out-of-band; the bypass is recorded in the server log. |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-PowerTaskDetails"></a>
 
@@ -2260,6 +2271,7 @@ QueueOptions controls how a task behaves when a conflict is detected.
 | health | [HealthReport](#v1-HealthReport) |  | Latest Core aggregate health snapshot mirrored by inventory sync. |
 | rack_profile_id | [string](#string) | optional | Core rack profile mirrored by expected inventory sync. |
 | nvl_domain_external_ids | [string](#string) | repeated | Public rack-group domain identities. |
+| operation_status_details | [RackOperationStatusDetails](#v1-RackOperationStatusDetails) |  | Output only. Absent on older servers; ignored on inventory writes. |
 
 <a name="v1-RackMemberPowerActions"></a>
 
@@ -2274,6 +2286,16 @@ list. Individual Core actions retain their order: Active before Pending.
 | component_id | [string](#string) | optional | External inventory ID, matching Component.component_id. Absent until the inventory member has a managed Core identity. |
 | component_type | [ComponentType](#v1-ComponentType) |  |  |
 | details | [PowerActionDetails](#v1-PowerActionDetails) |  |  |
+
+<a name="v1-RackOperationStatusDetails"></a>
+
+### RackOperationStatusDetails
+
+RackOperationStatusDetails explains operation_status, not operation admission.
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| tray_counts_by_type | [TrayStatusCountsByType](#v1-TrayStatusCountsByType) |  | Counts of active Compute, NVSwitch and PowerShelf inventory records from the same snapshot used for operation_status, independent of expansion. Undiscovered records and other component types are excluded. No freshness or expected-inventory completeness guarantee is implied. |
 
 <a name="v1-RackPosition"></a>
 
@@ -2648,6 +2670,36 @@ limit, the RPC returns ResourceExhausted. No task targets are truncated.
 | operations | [PowerOperations](#v1-PowerOperations) |  |  |
 | rack_external_id | [string](#string) | optional | The inventory rack identifier used by REST rack and tray resources. Includes retained soft-deleted racks. Absent when no rack identity can be read; older services or proxies also omit it. Never uses the Flow UUID. |
 
+<a name="v1-TrayStatusCounts"></a>
+
+### TrayStatusCounts
+
+TrayStatusCounts partitions participating trays by their operation phase.
+An empty rack has all zero counts and operation_status Unknown. A missing or
+unrecognized status on an existing participating tray increments unknown.
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| ready | [uint32](#uint32) |  | Trays in Ready. |
+| in_use | [uint32](#uint32) |  | Trays in InUse. |
+| initializing | [uint32](#uint32) |  | Trays in Initializing. |
+| error | [uint32](#uint32) |  | Trays in Error. |
+| deleting | [uint32](#uint32) |  | Trays in Deleting. |
+| unknown | [uint32](#uint32) |  | Trays with unknown, missing or unrecognized status. |
+
+<a name="v1-TrayStatusCountsByType"></a>
+
+### TrayStatusCountsByType
+
+TrayStatusCountsByType always includes all three types, with zero counts for
+types without participating records. Empty types do not affect rack phase.
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| compute | [TrayStatusCounts](#v1-TrayStatusCounts) |  |  |
+| nv_switch | [TrayStatusCounts](#v1-TrayStatusCounts) |  |  |
+| power_shelf | [TrayStatusCounts](#v1-TrayStatusCounts) |  |  |
+
 <a name="v1-TriggerTaskScheduleRequest"></a>
 
 ### TriggerTaskScheduleRequest
@@ -2756,6 +2808,7 @@ UpdateTaskScheduleScopeResponse returns the complete scope after reconciliation.
 | override_readiness_check | [bool](#bool) |  | When true, proceed with the firmware update even if one or more target components (or, for rack-scoped components, any host on the owning rack) are reported as not ready for the operation by their persisted ComponentOperationStatus. The flag is intended for operator-supervised maintenance windows where the tenant impact has been acknowledged out-of-band; setting it bypasses the readiness gate that would otherwise block disruptive operations against tenanted hardware. The bypass is recorded in the server log. |
 | authentication_data | [FirmwareAuthenticationData](#v1-FirmwareAuthenticationData) |  | Optional, write-only authentication data for firmware downloads. It is not supported for DPU-only updates or by the legacy NICo compute firmware controller. |
 | override_version_check | [bool](#bool) |  | Overrides firmware version-based checks when deciding whether to apply the update. This allows same-version reapplication and downgrade when the selected component backend supports those operations. It does not bypass readiness checks or state-controller routing. |
+| target_resolution_mode | [TargetResolutionMode](#v1-TargetResolutionMode) |  | Defaults to STRICT. Unknown values are rejected. See TargetResolutionMode. |
 
 <a name="v1-ValidateComponentsRequest"></a>
 
@@ -3178,6 +3231,19 @@ Unknown or Mixed; disabled management is coverage, never a desired Off vote.
 | SCHEDULE_SPEC_TYPE_INTERVAL | 1 | spec is a Go duration string, e.g. &#34;24h&#34; |
 | SCHEDULE_SPEC_TYPE_CRON | 2 | spec is a 5-field cron expression |
 | SCHEDULE_SPEC_TYPE_ONE_TIME | 3 | spec is an RFC3339 timestamp |
+
+<a name="v1-TargetResolutionMode"></a>
+
+### TargetResolutionMode
+
+TargetResolutionMode controls addressability validation after component type filtering.
+It does not override readiness gates, authorization, rule validation, or execution failures.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| TARGET_RESOLUTION_MODE_UNSPECIFIED | 0 | Omission and UNSPECIFIED use STRICT for compatibility. |
+| TARGET_RESOLUTION_MODE_STRICT | 1 | Reject the entire request before task creation if any selected component is unaddressable. |
+| TARGET_RESOLUTION_MODE_BEST_EFFORT | 2 | Skip unaddressable components and record their Flow identities and positions in task reports. Every selected rack must retain at least one addressable component; otherwise reject the request. |
 
 <a name="v1-TaskExecutorType"></a>
 
