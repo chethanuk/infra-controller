@@ -6,6 +6,7 @@ package leakdetection
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 
 	"github.com/rs/zerolog/log"
 	"github.com/uptrace/bun"
@@ -14,18 +15,22 @@ import (
 	"github.com/NVIDIA/infra-controller/rest-api/flow/internal/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/flow/internal/nicoapi"
 	"github.com/NVIDIA/infra-controller/rest-api/flow/internal/operation"
-	taskmanager "github.com/NVIDIA/infra-controller/rest-api/flow/internal/task/manager"
 	"github.com/NVIDIA/infra-controller/rest-api/flow/internal/task/operations"
 	identifier "github.com/NVIDIA/infra-controller/rest-api/flow/pkg/common/Identifier"
 	"github.com/NVIDIA/infra-controller/rest-api/flow/pkg/common/devicetypes"
 	"github.com/NVIDIA/infra-controller/rest-api/flow/pkg/types"
 )
 
+// TaskSubmitter admits leakage shutdowns without changing normal task submission.
+type TaskSubmitter interface {
+	SubmitLeakageShutdown(context.Context, *operation.Request) ([]uuid.UUID, error)
+}
+
 // Query core to get IDs of leaking racks and submit power-off tasks for each.
 func runLeakDetectionOneRack(
 	ctx context.Context,
 	nicoClient nicoapi.Client,
-	taskMgr taskmanager.Manager,
+	taskMgr TaskSubmitter,
 ) {
 	log.Info().Msg("Running leak detection for racks")
 
@@ -52,7 +57,7 @@ func runLeakDetectionOneRack(
 func runLeakDetectionOneMachine(
 	ctx context.Context,
 	nicoClient nicoapi.Client,
-	taskMgr taskmanager.Manager,
+	taskMgr TaskSubmitter,
 	pool *cdb.Session,
 ) {
 	log.Info().Msg("Running leak detection for machines")
@@ -82,7 +87,7 @@ func runLeakDetectionOneMachine(
 func runLeakDetectionOneSwitch(
 	ctx context.Context,
 	nicoClient nicoapi.Client,
-	taskMgr taskmanager.Manager,
+	taskMgr TaskSubmitter,
 	pool *cdb.Session,
 ) {
 	log.Info().Msg("Running leak detection for switches")
@@ -111,7 +116,7 @@ func runLeakDetectionOneSwitch(
 func runLeakDetectionOne(
 	ctx context.Context,
 	nicoClient nicoapi.Client,
-	taskMgr taskmanager.Manager,
+	taskMgr TaskSubmitter,
 	pool *cdb.Session,
 ) {
 	log.Info().Msg("Running leak detection")
@@ -187,7 +192,7 @@ func reconcileLeakStatus(
 
 func submitPowerOffTask(
 	ctx context.Context,
-	taskMgr taskmanager.Manager,
+	taskMgr TaskSubmitter,
 	componentExternalId string,
 	componentType devicetypes.ComponentType,
 ) error {
@@ -222,7 +227,7 @@ func submitPowerOffTask(
 		ConflictStrategy: operation.ConflictStrategyQueue,
 	}
 
-	taskIDs, err := taskMgr.SubmitTask(ctx, req)
+	taskIDs, err := taskMgr.SubmitLeakageShutdown(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to submit task: %w", err)
 	}
@@ -242,7 +247,7 @@ func submitPowerOffTask(
 
 func submitRackPowerOffTask(
 	ctx context.Context,
-	taskMgr taskmanager.Manager,
+	taskMgr TaskSubmitter,
 	rackExternalID string,
 ) error {
 	info := &operations.PowerControlTaskInfo{
@@ -271,7 +276,7 @@ func submitRackPowerOffTask(
 		ConflictStrategy: operation.ConflictStrategyQueue,
 	}
 
-	taskIDs, err := taskMgr.SubmitTask(ctx, req)
+	taskIDs, err := taskMgr.SubmitLeakageShutdown(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to submit task: %w", err)
 	}

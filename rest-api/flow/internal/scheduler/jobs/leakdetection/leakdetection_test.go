@@ -31,7 +31,7 @@ type mockManager struct {
 func (m *mockManager) Start(_ context.Context) error { return nil }
 func (m *mockManager) Stop(_ context.Context)        {}
 
-func (m *mockManager) SubmitTask(_ context.Context, req *operation.Request) ([]uuid.UUID, error) {
+func (m *mockManager) SubmitLeakageShutdown(_ context.Context, req *operation.Request) ([]uuid.UUID, error) {
 	m.requests = append(m.requests, req)
 	if m.submitErr != nil {
 		return nil, m.submitErr
