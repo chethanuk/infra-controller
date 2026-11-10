@@ -218,18 +218,26 @@ func Send(ctx context.Context, w *Writer, c Call, attempt func(context.Context) 
 		// dispatch itself, after every lock and bookkeeping step. Nothing
 		// waits on the journal between this check and the dispatch. run reports
 		// the actual dispatch time, taken after that final check.
-		reply, dispatchAt, halt := run(w, ctx, c.Retry.AttemptTimeout, func() error {
+		live := func() error {
 			if err := w.halted(ctx); err != nil {
 				return err
 			} else if c.cut() || in.Attempt > 1 && !c.RetryCutoff.IsZero() && !time.Now().Before(c.RetryCutoff) {
 				return ErrCutoff
 			} else if in.Attempt == 1 || !w.pastDeadline(0) {
-				if c.BeforeDispatch != nil {
-					return c.BeforeDispatch()
-				}
 				return nil
 			}
 			return errPastDeadline
+		}
+		reply, dispatchAt, halt := run(w, ctx, c.Retry.AttemptTimeout, func() error {
+			if err := live(); err != nil {
+				return err
+			}
+			if c.BeforeDispatch != nil {
+				if err := c.BeforeDispatch(); err != nil {
+					return err
+				}
+			}
+			return live()
 		}, attempt)
 		repliedAt := time.Now().UTC()
 		if halt != nil {
