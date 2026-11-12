@@ -6,6 +6,7 @@ package nico
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"go.temporal.io/sdk/temporal"
 
@@ -51,9 +52,9 @@ func (m *Manager) resetSwitch(ctx context.Context, target common.Target, action 
 	}
 	if result.Status != corev1.ComponentManagerStatusCode_COMPONENT_MANAGER_STATUS_CODE_SUCCESS {
 		if result.Status == corev1.ComponentManagerStatusCode_COMPONENT_MANAGER_STATUS_CODE_OUTCOME_UNKNOWN {
-			return fmt.Errorf("%s reset submission outcome is unknown; do not automatically resubmit", scope)
+			return fmt.Errorf("%s", resetResultMessage(scope+" reset submission outcome is unknown; do not automatically resubmit", result))
 		}
-		return temporal.NewNonRetryableApplicationError(fmt.Sprintf("%s reset submission status %s; do not automatically resubmit", scope, result.Status), scope+"ResetRejected", nil)
+		return temporal.NewNonRetryableApplicationError(resetResultMessage(fmt.Sprintf("%s reset submission status %s; do not automatically resubmit", scope, result.Status), result), scope+"ResetRejected", nil)
 	}
 	return nil
 }
@@ -90,7 +91,7 @@ func (m *Manager) switchResetCompleted(ctx context.Context, target common.Target
 		return false, fmt.Errorf("%s reset status returned a mismatched identity or action", scope)
 	}
 	if observed.Result.Status != corev1.ComponentManagerStatusCode_COMPONENT_MANAGER_STATUS_CODE_SUCCESS {
-		return false, fmt.Errorf("%s reset observation status %s", scope, observed.Result.Status)
+		return false, fmt.Errorf("%s", resetResultMessage(fmt.Sprintf("%s reset observation status %s", scope, observed.Result.Status), observed.Result))
 	}
 	switch observed.State {
 	case corev1.ComponentResetState_COMPONENT_RESET_STATE_QUEUED, corev1.ComponentResetState_COMPONENT_RESET_STATE_IN_PROGRESS:
@@ -98,8 +99,17 @@ func (m *Manager) switchResetCompleted(ctx context.Context, target common.Target
 	case corev1.ComponentResetState_COMPONENT_RESET_STATE_COMPLETED:
 		return true, nil
 	case corev1.ComponentResetState_COMPONENT_RESET_STATE_FAILED:
-		return false, temporal.NewNonRetryableApplicationError(scope+" factory reset failed", scope+"ResetFailed", nil)
+		return false, temporal.NewNonRetryableApplicationError(resetResultMessage(scope+" factory reset failed", observed.Result), scope+"ResetFailed", nil)
 	default:
 		return false, fmt.Errorf("%s reset outcome is unknown", scope)
 	}
+}
+
+// resetResultMessage keeps backend diagnostics without changing reset failure classification.
+func resetResultMessage(summary string, result *corev1.ComponentResult) string {
+	reason := strings.TrimSpace(result.GetError())
+	if reason == "" {
+		return summary
+	}
+	return summary + ": " + strings.Join(strings.Fields(reason), " ")
 }
