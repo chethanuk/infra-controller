@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::collections::HashMap;
 use std::ops::DerefMut;
 
 use carbide_uuid::DbTable;
@@ -252,6 +253,23 @@ pub async fn find_by_id_including_deleted(
     )
     .await?
     .pop())
+}
+
+/// Returns the private DNS zone name of each live VPC in `vpc_ids` that holds
+/// a zone, keyed by VPC id.
+pub async fn find_private_dns_zones_by_vpc_ids(
+    txn: impl DbReader<'_>,
+    vpc_ids: &[VpcId],
+) -> Result<HashMap<VpcId, String>, DatabaseError> {
+    let query = "SELECT z.vpc_id, z.name FROM vpc_private_dns_zones z
+        JOIN vpcs v ON v.id = z.vpc_id
+        WHERE z.vpc_id = ANY($1) AND v.deleted IS NULL";
+    sqlx::query_as::<_, (VpcId, String)>(query)
+        .bind(vpc_ids)
+        .fetch_all(txn)
+        .await
+        .map(|zones| zones.into_iter().collect())
+        .map_err(|e| DatabaseError::query(query, e))
 }
 
 pub async fn find_by_vni(txn: &mut PgConnection, vni: i32) -> Result<Vec<Vpc>, DatabaseError> {
@@ -712,5 +730,35 @@ mod tests {
 
         assert!(try_delete(txn.as_mut(), vpc_id).await.unwrap().is_none());
         txn.rollback().await.unwrap();
+    }
+
+    #[crate::sqlx_test]
+    async fn find_private_dns_zones_by_vpc_ids_skips_deleted_vpcs(pool: sqlx::PgPool) {
+        // A live VPC and a soft-deleted VPC each hold a zone.
+        let (live, deleted) = (VpcId::new(), VpcId::new());
+        sqlx::query(
+            "INSERT INTO vpcs (id, name, version, deleted) VALUES \
+                 ($1, 'live', 'V1-T0', NULL), ($2, 'deleted', 'V1-T0', NOW())",
+        )
+        .bind(live)
+        .bind(deleted)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO vpc_private_dns_zones (vpc_id, name, serial) VALUES \
+                 ($1, 'live.example.', 1), ($2, 'deleted.example.', 1)",
+        )
+        .bind(live)
+        .bind(deleted)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let zones = find_private_dns_zones_by_vpc_ids(&pool, &[live, deleted])
+            .await
+            .unwrap();
+
+        assert_eq!(zones, HashMap::from([(live, "live.example.".to_string())]));
     }
 }
