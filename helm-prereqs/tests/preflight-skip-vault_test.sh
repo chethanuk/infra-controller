@@ -299,8 +299,9 @@ consumers_call_line="$(grep -nxF '    _check_skip_vault_consumers_not_redeployed
 [[ -n "${consumers_call_line}" && "${reachable_line}" -lt "${consumers_call_line}" ]] \
     || fail "the consumer warning is not called once inside the cluster-reachable section"
 # health-check.sh mirrors both consumer probes; keep the literals in step.
-for probe in '{range .items[*]}{.metadata.name}{" "}{range .spec.template.spec.containers[*].env[*]}{.name}{","}{end}{"\n"}{end}' \
+for probe in '{range .items[*]}{.metadata.name}{" "}{range .spec.template.spec.containers[*].env[*]}{.name}{","}{.valueFrom.secretKeyRef.name}{.valueFrom.configMapKeyRef.name}{","}{end}{range .spec.template.spec.containers[*].envFrom[*]}{.secretRef.name}{.configMapRef.name}{","}{end}{range .spec.template.spec.volumes[*]}{.secret.secretName}{","}{end}{"\n"}{end}' \
              '{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{" "}{.spec.issuerRef.name}{"\n"}{end}' \
+             'VAULT_ADDR nico-vault-token nico-vault-approle-tokens vault-cluster-info vault-nicoca-issuer-token cert-manager-vault-nicoca-issuer' \
              "doesn't have a resource type|no matches for kind|could not find the requested resource"; do
     { grep -Fq -- "${probe}" "${PREFLIGHT_SH}" && grep -Fq -- "${probe}" "${SCRIPT_DIR}/../health-check.sh"; } \
         || fail "preflight.sh and health-check.sh no longer share the consumer probe: ${probe}"
@@ -321,6 +322,7 @@ kubectl() {
         nocrd:'get certificates.cert-manager.io -A -o jsonpath='*)
             echo 'error: the server doesn'"'"'t have a resource type "certificates"' >&2; return 1 ;;
         nocrd:*) ;;
+        byref:'get deployments -n nico-system -o jsonpath='*) printf '%s\n' "${FAKE_DEPLOYMENTS}" ;;
         *) ;;
     esac
 }
@@ -366,6 +368,27 @@ result="$(run_consumers_check false true true false error)"
     || fail "a failed consumer probe was not reported as a warning:" "${result}"
 result="$(run_consumers_check true true true false consumers)"
 [[ "${result}" == $'B: \nE: \nW: ' && ! -s "${KUBECTL_LOG}" ]] || fail "the Vault path probed or warned about consumers:" "${result}"
+# A Deployment that consumes a Vault Secret or ConfigMap by reference is a
+# consumer, not only one with VAULT_ADDR. Each row: the jsonpath field the
+# Deployment probe must ask kubectl for, the probe's line for one Deployment
+# (env names and value references, envFrom references, secret volumes, comma
+# separated), and the consumer _vault_consumers prints (empty: none).
+while IFS='|' read -r name field line want; do
+    : > "${KUBECTL_LOG}"
+    result="$(FAKE_CLUSTER=byref FAKE_DEPLOYMENTS="${line}" _vault_consumers)" || fail "${name}: _vault_consumers failed"
+    grep -F 'get deployments' "${KUBECTL_LOG}" | grep -Fq -- "${field}" \
+        || fail "${name}: the Deployment probe does not read ${field}:" "$(cat "${KUBECTL_LOG}")"
+    [[ "${result}" == "${want}" ]] || fail "${name}: expected consumer '${want}', got:" "${result}"
+done <<'CASES'
+env VAULT_ADDR|.env[*]}{.name}|dep-vault-addr VAULT_ADDR,,|deployment/nico-system/dep-vault-addr (VAULT_ADDR)
+envFrom secretRef|.secretRef.name|dep-envfrom-secret nico-vault-token,|deployment/nico-system/dep-envfrom-secret (nico-vault-token)
+envFrom configMapRef|.configMapRef.name|dep-envfrom-cm vault-cluster-info,|deployment/nico-system/dep-envfrom-cm (vault-cluster-info)
+env secretKeyRef|.secretKeyRef.name|dep-secretkeyref TOKEN,nico-vault-approle-tokens,|deployment/nico-system/dep-secretkeyref (nico-vault-approle-tokens)
+env configMapKeyRef|.configMapKeyRef.name|dep-cmkeyref VS,vault-cluster-info,|deployment/nico-system/dep-cmkeyref (vault-cluster-info)
+secret volume|.secret.secretName|dep-volume vault-nicoca-issuer-token,|deployment/nico-system/dep-volume (vault-nicoca-issuer-token)
+envFrom secretRef issuer secret|.secretRef.name|dep-issuer cert-manager-vault-nicoca-issuer,|deployment/nico-system/dep-issuer (cert-manager-vault-nicoca-issuer)
+clean Deployment|.env[*]}{.name}|dep-clean RUST_LOG,,|
+CASES
 unset -f kubectl
 
 echo "preflight --skip-vault tests passed"
