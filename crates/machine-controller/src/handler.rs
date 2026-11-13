@@ -129,7 +129,7 @@ use crate::health_report::{
 };
 use crate::redfish::{
     did_dpu_finish_booting, host_power_control, host_power_control_with_location, power_state,
-    power_state_name, reboot_requested_mode, set_power,
+    power_state_name, reboot_requested_mode, reset_bmc, set_power,
 };
 use crate::{
     MeasuringOutcome, get_measuring_prerequisites, handle_measuring_state,
@@ -295,6 +295,7 @@ pub struct MachineStateHandler {
 }
 
 pub struct MachineStateHandlerBuilder {
+    instrumentation: carbide_instrument::Instrumentation,
     dpu_up_threshold: chrono::Duration,
     dpu_nic_firmware_initial_update_enabled: bool,
     // TODO: Cleanup needed for this flag.
@@ -317,8 +318,12 @@ pub struct MachineStateHandlerBuilder {
 }
 
 impl MachineStateHandlerBuilder {
-    pub fn builder() -> Self {
+    /// Creates a builder whose default firmware downloader uses `instrumentation`.
+    /// A supplied downloader retains its own destination. Keep the provider alive
+    /// while the handler's firmware operations run.
+    pub fn builder(instrumentation: carbide_instrument::Instrumentation) -> Self {
         Self {
+            instrumentation,
             dpu_up_threshold: chrono::Duration::minutes(5),
             dpu_nic_firmware_initial_update_enabled: true,
             dpu_nic_firmware_reprovision_update_enabled: true,
@@ -495,9 +500,12 @@ impl MachineStateHandlerBuilder {
 
 impl MachineStateHandler {
     fn new(builder: MachineStateHandlerBuilder) -> Self {
+        let downloader = builder
+            .firmware_downloader
+            .unwrap_or_else(|| FirmwareDownloader::new(builder.instrumentation.clone()));
         let host_upgrade = Arc::new(HostUpgradeState {
             parsed_hosts: Arc::new(builder.hardware_models.clone().unwrap_or_default()),
-            downloader: builder.firmware_downloader.unwrap_or_default(),
+            downloader,
             upload_limiter: builder
                 .upload_limiter
                 .unwrap_or(Arc::new(Semaphore::new(5))),
@@ -1945,10 +1953,7 @@ impl MachineStateHandler {
                             SecureEraseBossState::HandleJobFailure {
                                 failure: _,
                                 power_state: _,
-                            } => {
-                                handle_boss_job_failure(redfish_client.as_ref(), mh_snapshot, ctx)
-                                    .await
-                            }
+                            } => handle_boss_job_failure(mh_snapshot, ctx).await,
                         }
                     }
                     CleanupState::HostCleanup { boss_controller_id } => {
@@ -2087,10 +2092,7 @@ impl MachineStateHandler {
                             CreateBossVolumeState::HandleJobFailure {
                                 failure: _,
                                 power_state: _,
-                            } => {
-                                handle_boss_job_failure(redfish_client.as_ref(), mh_snapshot, ctx)
-                                    .await
-                            }
+                            } => handle_boss_job_failure(mh_snapshot, ctx).await,
                         }
                     }
                     CleanupState::DisableBIOSBMCLockdown => {
@@ -4474,12 +4476,14 @@ async fn handle_dpu_reprovision(
                     "Initiating BMC reset of lenovo machine"
                 );
 
-                let redfish_client = ctx
-                    .services
-                    .create_redfish_client_from_machine(&state.host_snapshot)
-                    .await?;
+                // Connecting can itself need the Redfish service this works around, so a
+                // failed connection falls back to IPMI like a failed reset.
+                let redfish_result = match ctx.services.connect_bmc(&state.host_snapshot).await {
+                    Ok(bmc) => reset_bmc(&bmc).await.map_err(|error| error.to_string()),
+                    Err(error) => Err(error.to_string()),
+                };
 
-                if let Err(redfish_error) = redfish_client.bmc_reset(None).await {
+                if let Err(redfish_error) = redfish_result {
                     tracing::warn!(
                         machine_id = %state.host_snapshot.id,
                         error = %redfish_error,
@@ -5537,7 +5541,12 @@ impl DpuMachineStateHandler {
                 let credentials_updated = match ctx
                     .services
                     .bmc_credential_ops
-                    .uefi_setup(&dpu_bmc_access, true, dpu_uefi_credentials)
+                    .uefi_setup(
+                        &dpu_bmc_access,
+                        true,
+                        dpu_uefi_credentials,
+                        &ctx.services.instrumentation,
+                    )
                     .await
                 {
                     Err(e) => {
@@ -8328,7 +8337,12 @@ async fn handle_host_uefi_setup(
             match ctx
                 .services
                 .bmc_credential_ops
-                .uefi_setup(&host_bmc_access, false, host_uefi_credentials)
+                .uefi_setup(
+                    &host_bmc_access,
+                    false,
+                    host_uefi_credentials,
+                    &ctx.services.instrumentation,
+                )
                 .await
             {
                 Ok(job_id) => Ok(StateHandlerOutcome::transition(
@@ -8527,19 +8541,23 @@ impl StateHandler for HostMachineStateHandler {
                         .create_redfish_client_from_machine(&mh_snapshot.host_snapshot)
                         .await?;
 
-                    if !host_redfish_client
-                        .is_ipmi_over_lan_enabled()
+                    let bmc = ctx.services.connect_bmc(&mh_snapshot.host_snapshot).await?;
+                    let bmc_control = bmc
+                        .bmc_control()
+                        .map_err(|e| platform_error("enable_ipmi_over_lan", e.into()))?;
+                    if !bmc_control
+                        .ipmi_over_lan_enabled()
                         .await
-                        .map_err(|e| redfish_error("enable_ipmi_over_lan", e))?
+                        .map_err(|e| platform_error("enable_ipmi_over_lan", e))?
                     {
                         tracing::info!(
                             machine_id = %host_machine_id,
                             "IPMI over LAN is currently disabled on this host--enabling IPMI over LAN");
 
-                        host_redfish_client
-                            .enable_ipmi_over_lan(libredfish::EnabledDisabled::Enabled)
+                        bmc_control
+                            .set_ipmi_over_lan(true)
                             .await
-                            .map_err(|e| redfish_error("enable_ipmi_over_lan", e))?;
+                            .map_err(|e| platform_error("enable_ipmi_over_lan", e))?;
                     }
 
                     let machine_state = if mh_snapshot.has_managed_dpus()
@@ -12133,10 +12151,9 @@ impl HostUpgradeState {
                         state.host_snapshot.id
                     )));
                 }
-                redfish_client
-                    .bmc_reset(None)
+                reset_bmc(&bmc)
                     .await
-                    .map_err(|e| redfish_error("BMC reset", e))?;
+                    .map_err(|e| platform_error("BMC reset", e))?;
 
                 Ok(StateHandlerOutcome::transition(scenario.actual_new_state(
                     HostReprovisionState::InitialReset {
@@ -12870,12 +12887,9 @@ impl HostUpgradeState {
                 bmc_ip_address = %endpoint.address,
                 "Upgrade task has completed but needs BMC reboot, initiating one"
             );
-            let redfish_client = ctx
-                .services
-                .create_redfish_client_from_machine(&state.host_snapshot)
-                .await?;
+            let bmc = ctx.services.connect_bmc(&state.host_snapshot).await?;
 
-            if let Err(e) = redfish_client.bmc_reset(None).await {
+            if let Err(e) = reset_bmc(&bmc).await {
                 tracing::warn!(bmc_ip_address = %endpoint.address, error = %e, "Failed to reboot");
                 return Ok(StateHandlerOutcome::do_nothing());
             }
@@ -13808,7 +13822,6 @@ async fn wait_for_boss_controller_job_to_complete(
 }
 
 async fn handle_boss_job_failure(
-    redfish_client: &dyn Redfish,
     mh_snapshot: &ManagedHostStateSnapshot,
     ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
 ) -> Result<StateHandlerOutcome<ManagedHostState>, StateHandlerError> {
@@ -13831,10 +13844,9 @@ async fn handle_boss_job_failure(
                 )));
             }
 
-            redfish_client
-                .bmc_reset(None)
+            reset_bmc(&bmc)
                 .await
-                .map_err(|e| redfish_error("bmc_reset", e))?;
+                .map_err(|e| platform_error("bmc_reset", e))?;
 
             Ok(StateHandlerOutcome::transition(next_state))
         }
@@ -15248,10 +15260,9 @@ async fn set_host_boot_order(
                         "HandleJobFailure: Resetting BMC after failure"
                     );
 
-                    redfish_client
-                        .bmc_reset(None)
+                    reset_bmc(&bmc)
                         .await
-                        .map_err(|e| redfish_error("bmc_reset", e))?;
+                        .map_err(|e| platform_error("bmc_reset", e))?;
 
                     // Transition to ExpectedPowerState::On to wait for BMC to come back
                     Ok(SetBootOrderOutcome::Continue(SetBootOrderInfo {
