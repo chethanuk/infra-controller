@@ -111,7 +111,8 @@ func TestFlowServerImpl_GetTasksByIDs(t *testing.T) {
 			env.RegisterActivityWithOptions(statusActivities.UpdateTaskReport, sdkactivity.RegisterOptions{Name: taskactivity.NameUpdateTaskReport})
 			if tc.taskType == taskcommon.TaskTypeComponentReset {
 				manager := switchmanager.New(client, nil)
-				env.RegisterActivityWithOptions(manager.ResetSDN, sdkactivity.RegisterOptions{Name: taskactivity.NameResetSDN})
+				env.RegisterActivityWithOptions(manager.PrepareFactoryReset, sdkactivity.RegisterOptions{Name: taskactivity.NamePrepareFactoryReset})
+				env.RegisterActivityWithOptions(manager.SubmitFactoryReset, sdkactivity.RegisterOptions{Name: taskactivity.NameSubmitFactoryReset})
 				env.RegisterActivityWithOptions(manager.SDNResetCompleted, sdkactivity.RegisterOptions{Name: taskactivity.NameSDNResetCompleted})
 			} else {
 				manager := shelfmanager.New(client, nil)
