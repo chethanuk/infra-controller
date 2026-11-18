@@ -179,12 +179,7 @@ impl ServiceAddresses {
 
         let mut url_resolver = UrlResolver::try_new()?;
 
-        let pxe_ips = url_resolver
-            .resolve("carbide-pxe.forge")
-            .await
-            .wrap_err("DNS resolver for carbide-pxe")?;
-        // This log should be removed after some time.
-        tracing::info!(pxe_ip_addresses = ?pxe_ips, "Pxe server resolved");
+        let pxe_ips = pxe_ips_or_empty(url_resolver.resolve("carbide-pxe.forge").await);
 
         let ntpservers = match url_resolver.resolve("carbide-ntp.forge").await {
             Ok(x) => {
@@ -216,6 +211,22 @@ impl ServiceAddresses {
             pxe_ips: vec![IpAddr::from([127, 0, 0, 1])],
             ntpservers: vec![],
             nameservers: vec![IpAddr::from([127, 0, 0, 1])],
+        }
+    }
+}
+
+/// Like the NTP lookup, a failed PXE lookup must not stop the agent: the
+/// network config reconcile reports the missing PXE address instead.
+fn pxe_ips_or_empty(resolved: Result<Vec<IpAddr>, eyre::Report>) -> Vec<IpAddr> {
+    match resolved {
+        Ok(x) => {
+            // This log should be removed after some time.
+            tracing::info!(pxe_ip_addresses = ?x, "Pxe server resolved");
+            x
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "carbide-pxe.forge couldn't be resolved. DHCP config and PXE boot will fail until the agent restarts with a working lookup.");
+            vec![]
         }
     }
 }
@@ -406,6 +417,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn pxe_lookup_failure_yields_no_boot_addresses() {
+        use carbide_test_support::value_scenarios;
+
+        let v4 = IpAddr::from([10, 0, 0, 1]);
+        let v6 = IpAddr::from([0xfd00, 0, 0, 0, 0, 0, 0, 1]);
+        value_scenarios!(run = pxe_ips_or_empty;
+            "resolved addresses pass through" {
+                Ok(vec![v4, v6]) => vec![v4, v6],
+                Ok(vec![]) => vec![],
+            }
+
+            "resolver error leaves PXE addresses empty" {
+                Err(eyre::eyre!("no records found")) => vec![],
+            }
+        );
     }
 
     #[cfg(target_os = "linux")]
