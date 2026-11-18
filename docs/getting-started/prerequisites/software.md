@@ -81,9 +81,17 @@ PostgreSQL stores all NICo system state in the `nico_system_nico` database. Only
 - Extensions: `btree_gin` and `pg_trgm`
 - DSN available to workloads via ESO (per-namespace credentials)
 
+**Replication and connection settings set by the reference chart** (`helm-prereqs/templates/postgresql.yaml`):
+
+- Patroni `synchronous_node_count: 1`
+- Patroni `synchronous_mode` and `synchronous_mode_strict` follow `postgresql.synchronousMode` in `helm-prereqs/values.yaml` (default `true`). Set it to `false` for a single-instance cluster, otherwise strict synchronous mode blocks all writes.
+- `max_connections: 1024`
+- `synchronous_commit: remote_apply`
+
 **If you already have PostgreSQL:**
 
 - Provide a database, role, and password
+- Use the settings above as the reference values for replication and connection limits
 - Create the required extensions:
 
 ```bash
