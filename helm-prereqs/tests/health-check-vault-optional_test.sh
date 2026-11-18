@@ -21,9 +21,10 @@ export TEST_LOG="${TEST_TMP_DIR}/kubectl.log"
 mkdir -p "${TEST_TMP_DIR}/bin"
 # TEST_VAULT is installed, partial (namespace only), or absent; TEST_NICO_API is
 # the set of Deployments in the NICo namespace: vault (a renamed Core whose env
-# carries VAULT_ADDR), novault, or absent; TEST_CERTS is the cert-manager
-# Certificates: vault (Flow's still issued by vault-nico-issuer), none, nocrd
-# (cert-manager not installed), or error; TEST_VAULT_CONFIGMAP says whether
+# carries VAULT_ADDR), envfrom (Core reads Vault Secrets by reference),
+# novault, or absent; TEST_CERTS is the cert-manager Certificates: vault
+# (Flow's still issued by vault-nico-issuer), none, nocrd (cert-manager not
+# installed), or error; TEST_VAULT_CONFIGMAP says whether
 # vault-cluster-info exists. Every other resource is missing, so the unrelated
 # checks fail and the summary is reached.
 cat > "${TEST_TMP_DIR}/bin/kubectl" <<'FAKE_KUBECTL'
@@ -53,6 +54,7 @@ case "$*" in
         case "${TEST_NICO_API}" in
             vault) printf 'carbide-api DATASTORE_USER,VAULT_ADDR,VAULT_PKI_ROLE_NAME,\nnico-bmc-proxy RUST_LOG,\n' ;;
             novault) printf 'nico-api DATASTORE_USER,\n' ;;
+            envfrom) printf 'nico-bmc-proxy RUST_LOG,,\nnico-api DATASTORE_USER,,nico-vault-token,vault-cluster-info,\n' ;;
             absent) ;;
             *) exit 1 ;;
         esac ;;
@@ -202,6 +204,13 @@ assert_called 'get configmap -n nico-system vault-cluster-info -o name'
 CASE="Core requires Vault but the StatefulSet is gone"
 run_health_check absent vault none absent nico-system ""
 assert_output 'FAIL  statefulset/vault: not found, but NICo is configured to use Vault (deployment/carbide-api references VAULT_ADDR)'
+assert_no_output "${VAULT_ABSENT_SKIP}"
+assert_output 'FAIL  clusterissuer/vault-nico-issuer: not Ready'
+
+# A Deployment that reads a Vault Secret through envFrom still uses Vault.
+CASE="Core reads the Vault token Secret by reference but the StatefulSet is gone"
+run_health_check absent envfrom none absent nico-system ""
+assert_output 'FAIL  statefulset/vault: not found, but NICo is configured to use Vault (deployment/nico-api references nico-vault-token)'
 assert_no_output "${VAULT_ABSENT_SKIP}"
 assert_output 'FAIL  clusterissuer/vault-nico-issuer: not Ready'
 

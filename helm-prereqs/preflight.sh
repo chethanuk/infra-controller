@@ -1140,9 +1140,12 @@ _check_skip_vault_legacy_flow_managers() {
 }
 
 # Prints every Vault consumer in the cluster, one per line:
-#   deployment/<namespace>/<name> (VAULT_ADDR)          a Deployment in the NICo
+#   deployment/<namespace>/<name> (<reference>)         a Deployment in the NICo
 #       namespace whose container env names VAULT_ADDR (the nico-api chart
-#       renders it only while nico-api.vault.enabled; no Deployment name is assumed)
+#       renders it only while nico-api.vault.enabled; no Deployment name is assumed),
+#       or that reads nico-vault-token, nico-vault-approle-tokens, vault-cluster-info,
+#       vault-nicoca-issuer-token or cert-manager-vault-nicoca-issuer through env
+#       valueFrom, envFrom, or a secret volume. Only Deployments are inspected.
 #   certificate/<namespace>/<name> (vault-nico-issuer)  a cert-manager Certificate
 #       issued by the Vault PKI ClusterIssuer, which renews through the
 #       cert-manager Vault-auth ServiceAccount and token
@@ -1151,14 +1154,19 @@ _check_skip_vault_legacy_flow_managers() {
 # Certificates. Used by setup.sh (phase 5 and the end of the run) and preflight 4f;
 # health-check.sh mirrors the Deployment probe.
 _vault_consumers() {
-    local _rc=0 _out _name _envs _ref _issuer _errfile
+    local _rc=0 _out _name _envs _hit _ref _issuer _errfile
     local _ns="${NICO_SYSTEM_NS:-nico-system}"
     if _out="$(kubectl get deployments -n "${_ns}" \
-            -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.template.spec.containers[*].env[*]}{.name}{","}{end}{"\n"}{end}')"; then
+            -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.template.spec.containers[*].env[*]}{.name}{","}{.valueFrom.secretKeyRef.name}{.valueFrom.configMapKeyRef.name}{","}{end}{range .spec.template.spec.containers[*].envFrom[*]}{.secretRef.name}{.configMapRef.name}{","}{end}{range .spec.template.spec.volumes[*]}{.secret.secretName}{","}{end}{"\n"}{end}')"; then
         while read -r _name _envs; do
-            if [[ -n "${_name}" && ",${_envs}" == *,VAULT_ADDR,* ]]; then
-                printf 'deployment/%s/%s (VAULT_ADDR)\n' "${_ns}" "${_name}"
-            fi
+            [[ -n "${_name}" ]] || continue
+            # The first match is printed; health-check.sh keeps the same list.
+            for _hit in VAULT_ADDR nico-vault-token nico-vault-approle-tokens vault-cluster-info vault-nicoca-issuer-token cert-manager-vault-nicoca-issuer; do
+                if [[ ",${_envs}" == *,"${_hit}",* ]]; then
+                    printf 'deployment/%s/%s (%s)\n' "${_ns}" "${_name}" "${_hit}"
+                    break
+                fi
+            done
         done <<< "${_out}"
     else
         _rc=1

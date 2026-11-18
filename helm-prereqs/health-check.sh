@@ -16,10 +16,11 @@
 # and so does a missing Vault that NICo is still configured to use.
 # The Vault integration checks (PKI Job, ClusterIssuer, token Secrets, the
 # vault-cluster-info keys) run only while NICo is integrated with Vault: a
-# Deployment in the NICo namespace references VAULT_ADDR, a cert-manager
-# Certificate in any namespace is issued by vault-nico-issuer, or, before Core
-# is installed, nico-prereqs renders vault-cluster-info. setup.sh --skip-vault
-# turns them off once nothing references Vault.
+# Deployment in the NICo namespace references VAULT_ADDR or a Vault Secret or
+# ConfigMap, a cert-manager Certificate in any namespace is issued by
+# vault-nico-issuer, or, before Core is installed, nico-prereqs renders
+# vault-cluster-info. setup.sh --skip-vault turns them off once nothing
+# references Vault.
 # =============================================================================
 set -uo pipefail
 
@@ -132,7 +133,10 @@ rm -f "${_VAULT_SS_ERR}"
 # _vault_consumers in preflight.sh (same probes): a Deployment in its
 # namespace with a container env entry named VAULT_ADDR, which the nico-api
 # chart renders only while nico-api.vault.enabled (no Deployment name is
-# assumed, so a renamed Core counts), or a cert-manager Certificate in any
+# assumed, so a renamed Core counts), or that reads a Vault Secret or ConfigMap
+# (nico-vault-token, nico-vault-approle-tokens, vault-cluster-info,
+# vault-nicoca-issuer-token, cert-manager-vault-nicoca-issuer) through env
+# valueFrom, envFrom, or a secret volume, or a cert-manager Certificate in any
 # namespace issued by vault-nico-issuer, which renews through the Vault
 # resources (Flow and the site-agent after --skip-vault --skip-rest, for
 # example). Before Core is installed there is no Deployment, so the
@@ -151,13 +155,16 @@ _VAULT_INTEGRATED_BY=""
 _VAULT_INTEGRATION_KNOWN=true
 _NICO_DEPLOYMENTS_KNOWN=true
 if _NICO_DEPLOYMENTS=$(kc get deployments -n "${NICO_NS}" \
-     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.template.spec.containers[*].env[*]}{.name}{","}{end}{"\n"}{end}'); then
+     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.template.spec.containers[*].env[*]}{.name}{","}{.valueFrom.secretKeyRef.name}{.valueFrom.configMapKeyRef.name}{","}{end}{range .spec.template.spec.containers[*].envFrom[*]}{.secretRef.name}{.configMapRef.name}{","}{end}{range .spec.template.spec.volumes[*]}{.secret.secretName}{","}{end}{"\n"}{end}'); then
   while read -r _DEP _ENVS; do
-    if [[ -n "${_DEP}" && ",${_ENVS}" == *,VAULT_ADDR,* ]]; then
-      _VAULT_INTEGRATED=true
-      _VAULT_INTEGRATED_BY="deployment/${_DEP} references VAULT_ADDR"
-      break
-    fi
+    [[ -n "${_DEP}" ]] || continue
+    for _REF in VAULT_ADDR nico-vault-token nico-vault-approle-tokens vault-cluster-info vault-nicoca-issuer-token cert-manager-vault-nicoca-issuer; do
+      if [[ ",${_ENVS}" == *,"${_REF}",* ]]; then
+        _VAULT_INTEGRATED=true
+        _VAULT_INTEGRATED_BY="deployment/${_DEP} references ${_REF}"
+        break 2
+      fi
+    done
   done <<< "${_NICO_DEPLOYMENTS}"
 else
   _NICO_DEPLOYMENTS=""
